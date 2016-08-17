@@ -587,6 +587,111 @@ def convert_dev():
     # print(ts.get_sample_size())
     ts.dump("v3.hdf5")
 
+def hets_homs(n, num_pairs):
+    ts = msprime.simulate(n, random_seed=1)
+    pairs = [(j, j + 1) for j in range(num_pairs)]
+    tree = next(ts.trees())
+    # tree.draw("tree.svg")
+    v00 = np.zeros(ts.get_num_nodes(), dtype=int)
+    v01 = np.zeros(ts.get_num_nodes(), dtype=int)
+    v10 = np.zeros(ts.get_num_nodes(), dtype=int)
+    v11 = np.zeros(ts.get_num_nodes(), dtype=int)
+    for u in tree.nodes():
+        for x, y in pairs:
+            z = tree.get_mrca(x, y)
+            # u is 11 iff it is on the path from MRCA to root.
+            v = z
+            found = False
+            while v != msprime.NULL_NODE:
+                if u == v:
+                    v11[u] += 1
+                    found = True
+                    break
+                v = tree.get_parent(v)
+            # u is 10 iff we encounter u on our path from x to root before MRCA
+            v = x
+            while v != msprime.NULL_NODE and v != z:
+                if u == v:
+                    v10[u] += 1
+                    found = True
+                    break
+                v = tree.get_parent(v)
+            # u is 01 iff we encounter u on our path from y to root before MRCA
+            v = y
+            while v != msprime.NULL_NODE and v != z:
+                if u == v:
+                    v01[u] += 1
+                    found = True
+                    break
+                v = tree.get_parent(v)
+            # If none of the cases above held, we have a 00
+            if not found:
+                v00[u] += 1
+
+    mutations = [(u * (1 / ts.get_num_nodes()), u)
+            for u in range(ts.get_num_nodes() - 1)]
+    ts.set_mutations(mutations)
+    vp00 = np.zeros(ts.get_num_nodes(), dtype=int)
+    vp01 = np.zeros(ts.get_num_nodes(), dtype=int)
+    vp10 = np.zeros(ts.get_num_nodes(), dtype=int)
+    vp11 = np.zeros(ts.get_num_nodes(), dtype=int)
+    for variant, mutation in zip(ts.variants(), ts.mutations()):
+        g = variant.genotypes
+        u = mutation.node
+        for x, y in pairs:
+            if g[x] == '0' and g[y] == '0':
+                vp00[u] += 1
+            if g[x] == '1' and g[y] == '0':
+                vp10[u] += 1
+            if g[x] == '0' and g[y] == '1':
+                vp01[u] += 1
+            if g[x] == '1' and g[y] == '1':
+                vp11[u] += 1
+    u = ts.get_num_nodes() - 1
+    vp11[u] = len(pairs)
+    # print("pairs = ", pairs)
+    # print("u", "00", "01", "10", "11", sep="\t")
+    for j in range(ts.get_num_nodes()):
+        good = (
+            v00[j] == vp00[j] and
+            v01[j] == vp01[j] and
+            v10[j] == vp10[j] and
+            v11[j] == vp11[j])
+        if not good:
+            print("SHIT!!")
+        assert good
+        s = sum([v00[j], v01[j], v10[j], v11[j]])
+        assert s == num_pairs
+        # print(j, v00[j], v01[j], v10[j], v11[j], s, sep="\t")
+        # print(vp00[j], vp01[j], vp10[j], vp11[j], good, sep="\t")
+
+    # print("traverse")
+    mrcas = []
+    for pair in pairs:
+        # print("pair = ", pair, "mrca = ", tree.get_mrca(*pair))
+        mrcas.append(tree.get_mrca(*pair))
+    for u in tree.nodes():
+        if not tree.is_leaf(u):
+        # if u not in mrcas and not tree.is_leaf(u):
+        #     assert v01[u] == sum(v01[c] for c in tree.get_children(u))
+        #     assert v10[u] == sum(v10[c] for c in tree.get_children(u))
+        #     if v11[u] != 0:
+        #         print("HERE!!")
+        # if u in mrcas:
+            k = mrcas.count(u)
+            assert v11[u] == k + sum(v11[c] for c in tree.get_children(u))
+            assert v01[u] == sum(v01[c] for c in tree.get_children(u)) - k
+            assert v10[u] == sum(v10[c] for c in tree.get_children(u)) - k
+
+        # print("\n--------------------------------\n")
+        # s = "MRCA of " if u in mrcas else ""
+        # if u in mrcas:
+        #     s += str(mrcas.count(u))
+        # print("node", s)
+        # print("\t", u, v00[u], v01[u], v10[u], v11[u], sep="\t")
+        # print("children = ")
+        # for c in tree.get_children(u):
+        #     print("\t", c, v00[c], v01[c], v10[c], v11[c], sep="\t")
 
 if __name__ == "__main__":
     # mutations()
@@ -612,4 +717,8 @@ if __name__ == "__main__":
     # stuff()
     # examine()
     # convert_dev()
-    ts = msprime.load(sys.argv[1])
+    # ts = msprime.load(sys.argv[1])
+    for n in [100, 500, 1000, 2000]:
+        for k in range(1, n // 2, 10):
+            print(n, k)
+            hets_homs(n, k)

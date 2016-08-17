@@ -1490,6 +1490,13 @@ class TreeSequence(object):
         return HaplotypeGenerator(self).haplotypes()
 
     def variants(self):
+        # TODO
+        # 1. Add an 'individuals' parameter that allows us to specify
+        #    what samples we are interested in and how they are grouped into
+        #    polyploid individuals.
+        # 2. Change the returned 'genotypes' to be a tuple of strings, where
+        #    each string is a individuals genotype.
+        # 3. Add a 'node' field that allows us to track the node.
         for variant in _msprime.VariantGenerator(self._ll_tree_sequence):
             yield Variant(*variant)
 
