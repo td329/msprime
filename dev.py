@@ -693,6 +693,116 @@ def hets_homs(n, num_pairs):
         # for c in tree.get_children(u):
         #     print("\t", c, v00[c], v01[c], v10[c], v11[c], sep="\t")
 
+def mrcas(n, num_pairs):
+    ts = msprime.simulate(n, random_seed=1, recombination_rate=1)
+    pairs = [(2 * j, 2 * j + 1) for j in range(num_pairs)]
+    P = [set() for j in range(ts.get_num_nodes())]
+    Q = [set() for j in range(ts.get_num_nodes())]
+    pi = [-1 for j in range(ts.get_num_nodes())]
+    for p in pairs:
+        P[p[0]].add(p)
+        P[p[1]].add(p)
+    last_mrcas = [set() for j in range(ts.get_num_nodes())]
+    for diff, tree in zip(ts.diffs(), ts.trees()):
+        print("=" * 20)
+        print("new tree @ ", tree.get_interval(), tree.get_root())
+        print("diff = ")
+        _, r_out, r_in = diff
+        diff_nodes = set()
+        print("\tout:")
+        for r in r_out:
+            print("\t\t", r)
+            diff_nodes.add(r[0])
+            diff_nodes |= set(r[1])
+        print("\tin:")
+        root_path = set()
+        for r in r_in:
+            print("\t\t", r)
+            diff_nodes.add(r[0])
+            diff_nodes |= set(r[1])
+            v = r[0]
+            while v != msprime.NULL_NODE:
+                root_path.add(v)
+                v = tree.get_parent(v)
+        mrcas = [set() for j in range(ts.get_num_nodes())]
+        # print("root path = ", sorted(root_path))
+        for pair in pairs:
+            u = tree.get_mrca(*pair)
+            mrcas[u].add(pair)
+        affected_nodes = 0
+        num_diffs = 0
+        for j in range(ts.get_num_nodes()):
+            if mrcas[j] != last_mrcas[j]:
+                affected_nodes += 1
+                num_diffs += len(last_mrcas[j] ^ mrcas[j])
+                print("Diff at ", j)
+                print("\tbefore = ", len(last_mrcas[j]), sorted(last_mrcas[j]))
+                print("\tafter  = ", len(mrcas[j]), sorted(mrcas[j]))
+                print("\tdiff   = ", sorted(last_mrcas[j] ^ mrcas[j]))
+        print("affected = ", affected_nodes, "diffs = ", num_diffs)
+        last_mrcas = mrcas
+        # Update P and Q from the diffs
+        for u, children, _ in r_out:
+            R = P[u]
+            Q[u] = set()
+            P[u] = set()
+            v = pi[u]
+            while v != -1 and len(R) > 0:
+                print("removing ", R, "from ", v)
+                print("before P[v] = ", P[v], "Q[v] = ", Q[v])
+                S = Q[v] & R
+                Q[v] -= S
+                R -= S
+                P[v] -= R
+                P[v] |= S
+                print("after P[v] = ", P[v], "Q[v] = ", Q[v])
+                v = pi[v]
+            for c in children:
+                pi[c] = -1
+        for u, children, _ in r_in:
+            Q[u] = P[children[0]] & P[children[1]]
+            P[u] = (P[children[0]] | P[children[1]]) - Q[u]
+            for c in children:
+                pi[c] = u
+            R = P[u]
+            v = pi[u]
+            while v != -1 and len(R) > 0:
+                print("adding ", R, "to ", v)
+                print("before P[v] = ", P[v], "Q[v] = ", Q[v])
+                S = P[v] & R
+                Q[v] |= S
+                P[v] -= S
+                R -= S
+                P[v] |= R
+                print("after P[v] = ", P[v], "Q[v] = ", Q[v])
+                v = pi[v]
+        # Compute P and Q via an alternative algorithm
+        Pp = [set() for j in range(ts.get_num_nodes())]
+        Qp = [set() for j in range(ts.get_num_nodes())]
+        for p in pairs:
+            P[p[0]].add(p)
+            P[p[1]].add(p)
+        for j in range(ts.get_sample_size()):
+            R = P[j]
+            v = tree.get_parent(j)
+            while v != -1:
+                S = P[v] & R
+                Q[v] |= S
+                P[v] -= S
+                R -= S
+                P[v] |= R
+                v = tree.get_parent(v)
+        for j in range(ts.get_num_nodes()):
+            print(j, pi[j], tree.get_children(j), "\t", P[j], Q[j], sep="\t")
+            if P[j] != Pp[j]:
+                print("PERROR at ", j, "Pp=", Pp[j], "P = ", P[j])
+            if Q[j] != Qp[j]:
+                print("QERROR at ", j, "Qp= ", Qp[j], "Q = ", Q[j])
+            if Qp[j] != mrcas[j]:
+                print("BIG ERROR at ", j, "mrcas = ", mrcas[j], Q[j])
+
+
+
 if __name__ == "__main__":
     # mutations()
 
@@ -718,7 +828,8 @@ if __name__ == "__main__":
     # examine()
     # convert_dev()
     # ts = msprime.load(sys.argv[1])
-    for n in [100, 500, 1000, 2000]:
-        for k in range(1, n // 2, 10):
-            print(n, k)
-            hets_homs(n, k)
+    mrcas(20, 5)
+    # for n in [100, 500, 1000, 2000]:
+    #     for k in range(1, n // 2, 10):
+    #         print(n, k)
+    #         hets_homs(n, k)
